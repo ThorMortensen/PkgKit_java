@@ -2,8 +2,6 @@ package PackageKit;
 
 import at.favre.lib.bytes.Bytes;
 import at.favre.lib.bytes.BytesTransformer;
-import org.apache.commons.lang3.NotImplementedException;
-import org.apache.poi.util.NotImplemented;
 
 public abstract class PackageKitChecksums implements BytesTransformer {
 
@@ -27,10 +25,10 @@ public abstract class PackageKitChecksums implements BytesTransformer {
         return new Crc16_std_PUS_ECSS_E_ST_70_41C_2016();
     }
 
-    @NotImplemented
-    public static PackageKitChecksums crc16_iso_PUS_ECSS_E_ST_70_41C_2016() {
-        throw new NotImplementedException("ISO version is TBD. Use std version!");
-    }
+//    @NotImplemented
+//    public static PackageKitChecksums crc16_iso_PUS_ECSS_E_ST_70_41C_2016() {
+//        throw new NotImplementedException("ISO version is TBD. Use std version!");
+//    }
 
     public static PackageKitChecksums crc8_RMAP_ECSS_E_ST_50_52C_2010() {
         return new Crc8_RMAP_ECSS_E_ST_50_52C_2010();
@@ -209,7 +207,8 @@ public abstract class PackageKitChecksums implements BytesTransformer {
         }
 
         private int crcCalc(byte inByte, int inCrc) {
-            return lut[inCrc ^ inByte];
+//            int foo = (inCrc ^ inByte ) & 0xff;
+            return lut[(inCrc ^ inByte ) & 0xff];
         }
     }
 

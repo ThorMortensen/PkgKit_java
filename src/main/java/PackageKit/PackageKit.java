@@ -4,6 +4,8 @@ import at.favre.lib.bytes.Bytes;
 import lombok.Getter;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static at.favre.lib.bytes.BytesTransformer.ResizeTransformer.Mode.RESIZE_KEEP_FROM_ZERO_INDEX;
 
@@ -21,6 +23,7 @@ public class PackageKit {
     private Bytes dismantledPkg;
     private final int pecSizeHeader;
     private final int pecSizePayload;
+    private int fieldCount = 0;
 
     private int ppPad = 0;
     private final PackageKitChecksums checksum;
@@ -28,7 +31,7 @@ public class PackageKit {
     public PackageKit(String pkgName, PackageKitChecksums checksum, boolean useSeparateHeaderChecksum) {
         this.pkgName = pkgName;
         headerComposition = new HashMap<>();
-        headerSubFieldMap = new HashMap<>();
+        headerSubFieldMap = new LinkedHashMap<>();
         payload = Bytes.empty();
         dismantledPkg = Bytes.empty();
         this.checksum = checksum;
@@ -50,13 +53,37 @@ public class PackageKit {
         this(pkgName, null, false);
     }
 
-    public PackageKit(PackageKit fromPkg, String cloneName) {
-        this(cloneName, fromPkg.checksum, fromPkg.useSeparateChecksum);
-        cloneFields(fromPkg.head);
+    public PackageKit(PackageKit from, String cloneName) {
+        this(cloneName, from.checksum, from.useSeparateChecksum);
+        merge(from);
     }
 
-    public PackageKit(PackageKit fromPkg) {
-        this(fromPkg, fromPkg.pkgName);
+
+    public PackageKit(PackageKit from) {
+        this(from, from.pkgName);
+    }
+
+    // Shadow copy
+    private PackageKit(String pkgName, Field head, Field tail) {
+        this(pkgName, null, false);
+        this.head = head;
+        this.tail = tail;
+        Field walker = head;
+        while (walker != tail) {
+            ppPad = Integer.max(walker.name.length(), ppPad);
+            headerComposition.put(walker.name, walker);
+            headerBitSum += walker.bitSize;
+            walker = walker.nextField;
+        }
+        headerComposition.put(walker.name, walker);
+        headerBitSum += walker.bitSize;
+    }
+
+    private void merge(PackageKit from) {
+        cloneFields(from);
+        from.headerSubFieldMap.forEach((key, value) -> {
+            headerSubFieldMap.put(key, new PackageKit(value.pkgName, headerComposition.get(value.head.name), headerComposition.get(value.tail.name)));
+        });
     }
 
     /***************************
@@ -65,6 +92,7 @@ public class PackageKit {
     public PackageKit addField(String fieldName, int bitLength, int fieldValue) {
         ppPad = Integer.max(fieldName.length(), ppPad);
         headerBitSum += bitLength;
+        fieldCount++;
         if (head == null) {
             head = new Field(fieldName, bitLength, fieldValue);
             tail = head;
@@ -82,43 +110,24 @@ public class PackageKit {
     }
 
     public PackageKit addFieldsFrom(PackageKit from) {
-        PackageKit sub = new PackageKit(from);
-        headerSubFieldMap.put(sub.pkgName, sub);
-        ppPad = Integer.max(sub.ppPad, ppPad);
-        tail.nextField = sub.head;
-        tail = sub.tail;
-        headerComposition.putAll(sub.headerComposition);
+        ppPad = Integer.max(from.ppPad, ppPad);
+        merge(from);
+        headerSubFieldMap.put(from.pkgName, new PackageKit(from.pkgName, headerComposition.get(from.head.name), headerComposition.get(from.tail.name)));
+
         return this;
     }
 
-
     public Field getField(String name) {
-        try {
-            return headerComposition.get(name);
-        } catch (NullPointerException e) {
-            System.err.println("PackageKit " + pkgName + ": Field name '" + name + "' doesn't exist. Nothing to get!");
-        }
-        return new Field("null", 8, 0);
+        return headerComposition.get(name);
     }
 
     public PackageKit getSubPkg(String name) {
-        try {
-            return headerSubFieldMap.get(name);
-        } catch (NullPointerException e) {
-            System.err.println("PackageKit " + pkgName + ": Sub-Package name '" + name + "' doesn't exist. Nothing to get!");
-        }
-        return null;
+        return headerSubFieldMap.get(name);
     }
 
     public PackageKit setSubPkg(String name, Bytes value) {
-        try {
-            return headerSubFieldMap.get(name).fromBytes(value);
-        } catch (NullPointerException e) {
-            System.err.println("PackageKit " + pkgName + ": Sub-Package name '" + name + "' doesn't exist. Nothing to set!");
-        }
-        return null;
+        return headerSubFieldMap.get(name).fromBytes(value);
     }
-
 
     public Bytes getHeader() {
         return compileHeader();
@@ -266,9 +275,11 @@ public class PackageKit {
 
 
         return "=== PackageKit: '" + pkgName + '\'' + " ===\n" +
-                "Size   : " + size() + " bytes" + '\n' +
+                "Size        : " + size() + " bytes" + '\n' +
+                "Field count : " + headerComposition.size() + '\n' +
+                "Components  : " + headerSubFieldMap.keySet() + '\n' +
                 "--- Header composition ---" + '\n' +
-                head.toStringNested(ppPad) + '\n' +
+                head.toStringNested(ppPad + 3, tail) + '\n' +
                 "--- Pkg composition (hex) ---" + '\n' +
                 "Header  : " + compileHeader().encodeHex().toUpperCase() + '\n' +
                 "Payload : " + payload.encodeHex().toUpperCase() + '\n' +
@@ -289,14 +300,16 @@ public class PackageKit {
 
     private Bytes compileHeader() {
         // If this is a subfield only compile this headerComposition(size).
-        return head.compile(Bytes.allocate(headerSize()), this.headerComposition.size());
+        return head.compile(Bytes.allocate(headerSize()), tail);
     }
 
-    private void cloneFields(Field fromHead) {
-        while (fromHead != null) {
-            addField(fromHead.name, fromHead.bitSize, fromHead.fieldValue);
-            fromHead = fromHead.nextField;
+    private void cloneFields(PackageKit from) {
+        Field head = from.head;
+        while (head != from.tail) {
+            addField(head.name, head.bitSize, head.fieldValue);
+            head = head.nextField;
         }
+        addField(head.name, head.bitSize, head.fieldValue);
     }
 
 
@@ -351,18 +364,18 @@ public class PackageKit {
             return new Field(null, this.bitSize + f.bitSize, (f.fieldValue << this.bitSize) | this.fieldValue);
         }
 
-        private Bytes compile(Bytes header, int usedBits, int fieldCount) {
+        private Bytes compile(Bytes header, int usedBits, Field endField) {
             Bytes padded = Bytes.from(fieldValue).resize(header.length());
             Bytes shifted = padded.leftShift((header.length() * Byte.SIZE) - usedBits - this.bitSize);
             Bytes combined = header.or(shifted);
-            if (this.nextField == null || fieldCount == 0) {
+            if (this.nextField == null || endField == this) {
                 return combined;
             }
-            return this.nextField.compile(combined, usedBits + this.bitSize, fieldCount - 1);
+            return this.nextField.compile(combined, usedBits + this.bitSize, endField);
         }
 
-        private Bytes compile(Bytes header, int fieldCount) {
-            return compile(header, 0, fieldCount);
+        private Bytes compile(Bytes header, Field endField) {
+            return compile(header, 0, endField);
         }
 
         private void dismantle(Bytes header, int usedBits) {
@@ -395,12 +408,12 @@ public class PackageKit {
             return String.format("%-" + padding + "s: bits: %2d, value: 0x%X", '\'' + name + '\'', bitSize, fieldValue);
         }
 
-        private String toStringNested(int padding) {
+        private String toStringNested(int padding, Field tail) {
 
-            if (this.nextField == null) {
+            if (this == tail) {
                 return toString(padding);
             }
-            return toString(padding) + '\n' + nextField.toStringNested(padding);
+            return toString(padding) + '\n' + nextField.toStringNested(padding, tail);
         }
 
     }
