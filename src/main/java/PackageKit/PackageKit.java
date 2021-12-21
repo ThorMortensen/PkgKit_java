@@ -214,12 +214,12 @@ public class PackageKit {
         if (pkgBytes.length() < headerSize()) {
             System.err.println(pkgName + ": fromBytes input size is too small (" + pkgBytes.length() + ")! Input has been padded (" + (headerSize() - pkgBytes.length()) + ") to match header size (" + headerSize() + ")! (from LSB)");
             dismantledPkg = pkgBytes.resize(headerSize(), RESIZE_KEEP_FROM_ZERO_INDEX);
-            head.dismantle(dismantledPkg);
+            head.dismantle(dismantledPkg, tail);
             payload = Bytes.empty();
             return this;
         }
 
-        head.dismantle(pkgBytes, 0);
+        head.dismantle(pkgBytes, 0, tail);
         payload = pkgBytes.copy(headerSize() + pecSizeHeader, pkgBytes.length() - headerSize() - pecSizeHeader);
         dismantledPkg = pkgBytes;
         return this;
@@ -378,17 +378,17 @@ public class PackageKit {
             return compile(header, 0, endField);
         }
 
-        private void dismantle(Bytes header, int usedBits) {
+        private void dismantle(Bytes header, int usedBits, Field endField) {
             Bytes shift = header.rightShift((header.length() * Byte.SIZE) - usedBits - this.bitSize);
             this.fieldValue = shift.resize(Integer.BYTES).toInt() & this.bit_mask;
-            if (this.nextField == null) {
+            if (this.nextField == null|| endField == this) {
                 return;
             }
-            this.nextField.dismantle(header, usedBits + this.bitSize);
+            this.nextField.dismantle(header, usedBits + this.bitSize, endField);
         }
 
-        private void dismantle(Bytes header) {
-            dismantle(header, 0);
+        private void dismantle(Bytes header, Field endField) {
+            dismantle(header, 0, endField);
         }
 
         private void clearAll() {
