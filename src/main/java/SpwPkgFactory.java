@@ -1,13 +1,14 @@
-import PackageKit.PackageKitChecksums;
-import PackageKit.PackageKit;
+import com.rovsing.packetRouting.PackageKit.PackageKit;
+import com.rovsing.packetRouting.PackageKit.PackageKitChecksums;
 
-public class SpwPkgPortfolio {
+public class SpwPkgFactory {
 
     private static final PackageKit PUS_TC = new PackageKit("PUS_TC", PackageKitChecksums.crc16_std_PUS_ECSS_E_ST_70_41C_2016());
     private static final PackageKit PUS_TM = new PackageKit("PUS_TM", PackageKitChecksums.crc16_std_PUS_ECSS_E_ST_70_41C_2016());
     private static final PackageKit CPTP = new PackageKit("CPTP");
     private static final PackageKit NATIVE = new PackageKit("NATIVE");
-    private static final PackageKit RMAP_WRITE = new PackageKit("RMAP_WRITE", PackageKitChecksums.crc8_RMAP_ECSS_E_ST_50_52C_2010(), true);
+    private static final PackageKit RMAP_WRITE = new PackageKit("RMAP_WRITE", PackageKitChecksums.crc16_std_PUS_ECSS_E_ST_70_41C_2016(), false);
+//    private static final PackageKit RMAP_WRITE = new PackageKit("RMAP_WRITE");
     private static final PackageKit RMAP_WRITE_REPLY = new PackageKit("RMAP_WRITE_REPLY", PackageKitChecksums.crc8_RMAP_ECSS_E_ST_50_52C_2010(), true);
     private static final PackageKit RMAP_READ = new PackageKit("RMAP_READ", PackageKitChecksums.crc8_RMAP_ECSS_E_ST_50_52C_2010(), true);
     private static final PackageKit RMAP_READ_REPLY = new PackageKit("RMAP_READ_REPLY", PackageKitChecksums.crc8_RMAP_ECSS_E_ST_50_52C_2010(), true);
@@ -25,7 +26,7 @@ public class SpwPkgPortfolio {
     private static final PackageKit RMAP_COMMON_INITIATOR = new PackageKit("rmapCommonInitiator");
 
 
-    public SpwPkgPortfolio() {
+    public SpwPkgFactory() {
         /*******************
          *      Common
          ******************/
@@ -61,6 +62,7 @@ public class SpwPkgPortfolio {
         RMAP_READ_REPLY.addFieldsFrom(RMAP_COMMON_ALL);
         RMAP_READ_REPLY.addField("reserved", 8);
         RMAP_READ_REPLY.addField("dataLength", 24);
+
 
         //        /*******************
 //         *      PUS

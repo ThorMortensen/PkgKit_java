@@ -1,13 +1,15 @@
-package PackageKit;
+package com.rovsing.packetRouting.PackageKit;
 
 import at.favre.lib.bytes.Bytes;
+import at.favre.lib.bytes.BytesTransformer;
+import at.favre.lib.bytes.BytesTransformer.ResizeTransformer;
 import lombok.Getter;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Optional;
 
-import static at.favre.lib.bytes.BytesTransformer.ResizeTransformer.Mode.RESIZE_KEEP_FROM_ZERO_INDEX;
 
 public class PackageKit {
     private final HashMap<String, Field> headerComposition;
@@ -18,7 +20,7 @@ public class PackageKit {
     private int headerBitSum = 0;
 
     @Getter
-    private final String pkgName;
+    private String pkgName;
     private Bytes payload;
     private Bytes dismantledPkg;
     private final int pecSizeHeader;
@@ -26,9 +28,9 @@ public class PackageKit {
     private int fieldCount = 0;
 
     private int ppPad = 0;
-    private final PackageKitChecksums checksum;
+    private final com.rovsing.packetRouting.PackageKit.PackageKitChecksums checksum;
 
-    public PackageKit(String pkgName, PackageKitChecksums checksum, boolean useSeparateHeaderChecksum) {
+    public PackageKit(String pkgName, com.rovsing.packetRouting.PackageKit.PackageKitChecksums checksum, boolean useSeparateHeaderChecksum) {
         this.pkgName = pkgName;
         headerComposition = new HashMap<>();
         headerSubFieldMap = new LinkedHashMap<>();
@@ -45,7 +47,7 @@ public class PackageKit {
         }
     }
 
-    public PackageKit(String pkgName, PackageKitChecksums checksum) {
+    public PackageKit(String pkgName, com.rovsing.packetRouting.PackageKit.PackageKitChecksums checksum) {
         this(pkgName, checksum, false);
     }
 
@@ -57,7 +59,6 @@ public class PackageKit {
         this(cloneName, from.checksum, from.useSeparateChecksum);
         merge(from);
     }
-
 
     public PackageKit(PackageKit from) {
         this(from, from.pkgName);
@@ -118,7 +119,7 @@ public class PackageKit {
     }
 
     public Field getField(String name) {
-        return headerComposition.get(name);
+        return Optional.ofNullable(headerComposition.get(name)).orElseThrow(() -> new NoSuchElementException("Field: " + name + " not found in " + pkgName));
     }
 
     public PackageKit getSubPkg(String name) {
@@ -148,11 +149,18 @@ public class PackageKit {
     /***************************
      *       Certify
      **************************/
+    private Bytes getHeaderChecksum(Bytes header) {
+        if (!useSeparateChecksum || checksum == null || header.isEmpty()) {
+            return Bytes.empty();
+        }
+        return header.transform(checksum);
+    }
+
     public Bytes getHeaderChecksum() {
         if (checksum == null) {
             return Bytes.empty();
         }
-        return compileHeader().transform(checksum);
+        return compileHeader().resize(checksum.digestByteSize(), ResizeTransformer.Mode.RESIZE_KEEP_FROM_MAX_LENGTH);
     }
 
     public Bytes getPayloadChecksum() {
@@ -213,24 +221,29 @@ public class PackageKit {
 
         if (pkgBytes.length() < headerSize()) {
             System.err.println(pkgName + ": fromBytes input size is too small (" + pkgBytes.length() + ")! Input has been padded (" + (headerSize() - pkgBytes.length()) + ") to match header size (" + headerSize() + ")! (from LSB)");
-            dismantledPkg = pkgBytes.resize(headerSize(), RESIZE_KEEP_FROM_ZERO_INDEX);
-            head.dismantle(dismantledPkg, tail);
-            payload = Bytes.empty();
-            return this;
+            return fromBytesHeaderOnly(pkgBytes);
         }
 
         head.dismantle(pkgBytes, 0, tail);
-        payload = pkgBytes.copy(headerSize() + pecSizeHeader, pkgBytes.length() - headerSize() - pecSizeHeader);
+        payload = pkgBytes.copy(headerSize(), pkgBytes.length() - headerSize());
         dismantledPkg = pkgBytes;
+        return this;
+    }
+
+    public PackageKit fromBytesHeaderOnly(Bytes pkgBytes) {
+        assertHeaderSize();
+        dismantledPkg = pkgBytes.resize(headerSize(), ResizeTransformer.Mode.RESIZE_KEEP_FROM_ZERO_INDEX);
+        head.dismantle(dismantledPkg, tail);
+        payload = Bytes.empty();
         return this;
     }
 
     public Bytes toBytes() {
         assertHeaderSize();
         dismantledPkg = Bytes.empty();
-        if (useSeparateChecksum) {
-            return compileHeader().append(getHeaderChecksum()).append(payload).append(getPayloadChecksum());
-        }
+//        if (useSeparateChecksum) {
+//            return compileHeader().append(payload).append(getPayloadChecksum());
+//        }
         return compileHeader().append(payload).append(getChecksum());
     }
 
@@ -238,7 +251,7 @@ public class PackageKit {
      *         Info
      **************************/
     public int size() {
-        return headerSize() + payloadSize();
+        return dismantledPkg.isEmpty() ? headerSize() + payloadSize() : dismantledPkg.length();
     }
 
     public int headerSize() {
@@ -275,14 +288,16 @@ public class PackageKit {
 
 
         return "=== PackageKit: '" + pkgName + '\'' + " ===\n" +
-                "Size        : " + size() + " bytes" + '\n' +
+                "Package size: " + size() + " bytes" + '\n' +
+                "Payload size: " + payloadSize() + " bytes" + '\n' +
+                "Field size  : " + headerSize() + " bytes" + '\n' +
                 "Field count : " + headerComposition.size() + '\n' +
                 "Components  : " + headerSubFieldMap.keySet() + '\n' +
                 "--- Header composition ---" + '\n' +
                 head.toStringNested(ppPad + 3, tail) + '\n' +
                 "--- Pkg composition (hex) ---" + '\n' +
                 "Header  : " + compileHeader().encodeHex().toUpperCase() + '\n' +
-                "Payload : " + payload.encodeHex().toUpperCase() + '\n' +
+                "Payload : " + payload.append().encodeHex().toUpperCase() + '\n' +
                 formatChecksumString() +
                 formatPkgString() +
                 '\n';
@@ -300,7 +315,8 @@ public class PackageKit {
 
     private Bytes compileHeader() {
         // If this is a subfield only compile this headerComposition(size).
-        return head.compile(Bytes.allocate(headerSize()), tail);
+        Bytes header = head.compile(Bytes.allocate((headerBitSum / Byte.SIZE)), tail);
+        return header.append(getHeaderChecksum(header));
     }
 
     private void cloneFields(PackageKit from) {
@@ -310,6 +326,10 @@ public class PackageKit {
             head = head.nextField;
         }
         addField(head.name, head.bitSize, head.fieldValue);
+    }
+
+    public void setPkgName(String name) {
+        this.pkgName = name;
     }
 
 
@@ -332,6 +352,10 @@ public class PackageKit {
 
         public void setValue(int value) {
             this.fieldValue = value & bit_mask;
+        }
+
+        public void setValue(Field from) {
+            this.fieldValue = from.getValue() & bit_mask;
         }
 
         public int increment() {
@@ -381,7 +405,7 @@ public class PackageKit {
         private void dismantle(Bytes header, int usedBits, Field endField) {
             Bytes shift = header.rightShift((header.length() * Byte.SIZE) - usedBits - this.bitSize);
             this.fieldValue = shift.resize(Integer.BYTES).toInt() & this.bit_mask;
-            if (this.nextField == null|| endField == this) {
+            if (this.nextField == null || endField == this) {
                 return;
             }
             this.nextField.dismantle(header, usedBits + this.bitSize, endField);
