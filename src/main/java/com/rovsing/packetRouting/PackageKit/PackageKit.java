@@ -91,6 +91,9 @@ public class PackageKit {
      *       Fields
      **************************/
     public PackageKit addField(String fieldName, int bitLength, int fieldValue) {
+        if(headerComposition.containsKey(fieldName)){
+            throw new IllegalArgumentException("A field named '" + fieldName + "' already exist in package '" + pkgName+ "'. Duplicate fields are not allowed!");
+        }
         ppPad = Integer.max(fieldName.length(), ppPad);
         headerBitSum += bitLength;
         fieldCount++;
@@ -106,6 +109,7 @@ public class PackageKit {
     }
 
     public PackageKit addField(String fieldName, int bitLength) {
+
         addField(fieldName, bitLength, 0);
         return this;
     }

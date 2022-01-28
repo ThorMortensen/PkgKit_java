@@ -1,4 +1,5 @@
 import at.favre.lib.bytes.Bytes;
+import com.rovsing.msr_ero.sis.spw.SpwPkgFactory;
 import com.rovsing.packetRouting.PackageKit.PackageKit;
 import lombok.experimental.var;
 
@@ -9,9 +10,16 @@ public class Main {
 
     public static void main(String[] args) {
         SpwPkgFactory pkgFactory = new SpwPkgFactory();
-        Bytes payload = Bytes.parseHex("1234");
 
         PackageKit rmapWrite = pkgFactory.new_RMAP_WRITE();
+        PackageKit rmapWrtieReply = pkgFactory.new_RMAP_WRITE_REPLY();
+
+        PackageKit rmapReadReply = pkgFactory.new_RMAP_READ_REPLY();
+
+
+        Bytes payload = Bytes.parseHex("1234");
+
+//        PackageKit rmapWrite = pkgFactory.new_RMAP_WRITE();
         PackageKit rmapWriteDBP = pkgFactory.new_RMAP_WRITE();
         rmapWrite.getField("logicAddress").setValue(0xff);
         rmapWrite.getField("address").setValue(0x1);
