@@ -280,7 +280,16 @@ public class PackageKit {
     }
 
     private String formatPkgString() {
-        return (dismantledPkg.isEmpty() ? "Compiled Package : " + toBytes().encodeHex().toUpperCase() : "Dismantled Package :" + dismantledPkg.encodeHex().toUpperCase());
+        String pkg;
+        String type;
+        if (dismantledPkg.isEmpty()) {
+            type = "Compiled Package : ";
+            pkg = toBytes().encodeHex().toUpperCase();
+        } else {
+            type = "Dismantled Package : ";
+            pkg = dismantledPkg.encodeHex().toUpperCase();
+        }
+        return String.format("%s%s\n%" + (type.length() + (headerSize() * 2) + 8) + "s", type, pkg, "header | payload");
     }
 
     @Override
