@@ -114,7 +114,7 @@ public class SpwPkgFactory {
         RMAP_READ.addFieldsFrom(RMAP_COMMON_INITIATOR);
 
         RMAP_READ_REPLY.addFieldsFrom(RMAP_COMMON_ALL);
-        RMAP_READ_REPLY.addField("reserved", 8);
+        RMAP_READ_REPLY.addField("reservedByte", 8);
         RMAP_READ_REPLY.addField("dataLength", 24);
     }
 

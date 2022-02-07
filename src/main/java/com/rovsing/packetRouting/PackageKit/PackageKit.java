@@ -109,7 +109,6 @@ public class PackageKit {
     }
 
     public PackageKit addField(String fieldName, int bitLength) {
-
         addField(fieldName, bitLength, 0);
         return this;
     }
@@ -123,7 +122,7 @@ public class PackageKit {
     }
 
     public Field getField(String name) {
-        return Optional.ofNullable(headerComposition.get(name)).orElseThrow(() -> new NoSuchElementException("Field: " + name + " not found in " + pkgName));
+        return Optional.ofNullable(headerComposition.get(name)).orElseThrow(() -> new NoSuchElementException("Field: '" + name + "' not found in " + pkgName));
     }
 
     public PackageKit getSubPkg(String name) {
@@ -190,11 +189,12 @@ public class PackageKit {
     }
 
     public boolean isPayloadChecksumOk() {
-        if (checksum == null || payload.isEmpty()) {
+        if (checksum == null || dismantledPkg.isEmpty()) {
             return true;
         }
-        return checksum.check(payload);
+        return checksum.check(dismantledPkg.copy(headerSize(), dismantledPkg.length() - headerSize()));
     }
+
 
     public boolean isChecksumOk() {
         if (checksum == null || dismantledPkg.isEmpty()) {
@@ -229,7 +229,7 @@ public class PackageKit {
         }
 
         head.dismantle(pkgBytes, 0, tail);
-        payload = pkgBytes.copy(headerSize(), pkgBytes.length() - headerSize());
+        payload = pkgBytes.copy(headerSize(), pkgBytes.length() - headerSize() - pecSizePayload);
         dismantledPkg = pkgBytes;
         return this;
     }
@@ -245,9 +245,9 @@ public class PackageKit {
     public Bytes toBytes() {
         assertHeaderSize();
         dismantledPkg = Bytes.empty();
-//        if (useSeparateChecksum) {
-//            return compileHeader().append(payload).append(getPayloadChecksum());
-//        }
+        if (useSeparateChecksum) {
+            return compileHeader().append(payload).append(getPayloadChecksum());
+        }
         return compileHeader().append(payload).append(getChecksum());
     }
 
